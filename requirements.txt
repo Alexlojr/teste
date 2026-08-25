@@ -1,0 +1,8 @@
+# picamera2 e libcamera NÃO entram aqui: no Raspberry Pi OS eles vêm do
+# sistema (apt install python3-picamera2) e são enxergados pelo venv porque
+# o setup.sh cria o venv com --system-site-packages.
+streamlit==1.57.0
+opencv-python==4.13.0.92
+ultralytics==8.4.50
+pyserial==3.5
+numpy==2.2.4
