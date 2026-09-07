@@ -1,0 +1,71 @@
+{
+  "_leia_isto": [
+    "Todos os numeros aqui sao PLACEHOLDERS ate serem medidos no braco real.",
+    "Enquanto estiverem assim, o pipeline roda mas aponta para o lugar errado.",
+    "",
+    "elos_mm  -> medir com regua/CAD, de centro de eixo a centro de eixo.",
+    "           l1 = altura VERTICAL do TOPO DA PLACA ate o eixo do ombro.",
+"                A placa do braco tem a mesma espessura das placas da area de",
+"                coleta, entao esse topo e o mesmo plano onde o objeto se apoia",
+"                e onde a homografia e calibrada. Nao ha offset a corrigir.",
+    "           l2 = eixo do ombro    -> eixo do cotovelo (distancia direta)",
+    "           l3 = eixo do cotovelo -> ponto de preensao da garra",
+    "",
+    "offset_radial_mm -> se o eixo do ombro nao fica exatamente acima do eixo",
+    "           da base, ponha aqui o deslocamento horizontal. No CAD do",
+    "           projeto apareceu ~21 mm; confirmar no braco real.",
+    "",
+    "juntas   -> achar com os comandos SWEEP/LIM/DETACH do braco_firmware:",
+    "           minimo/maximo = limites FISICOS reais, achados em passos de 20 graus",
+    "           offset  = angulo de servo que corresponde ao 0 grau matematico",
+    "           sentido = +1 se servo cresce junto com o angulo matematico, -1 se ao contrario"
+  ],
+
+  "calibrado": false,
+
+  "elos_mm": {
+    "l1": 105.0,
+    "l2": 80.0,
+    "l3": 80.0
+  },
+
+  "offset_radial_mm": 0.0,
+
+  "juntas": {
+    "base":     { "canal": 0, "offset": 0,  "sentido": 1, "minimo": 10, "maximo": 170 },
+    "ombro":    { "canal": 1, "offset": 90, "sentido": 1, "minimo": 20, "maximo": 160 },
+    "cotovelo": { "canal": 2, "offset": 0,  "sentido": 1, "minimo": 10, "maximo": 170 },
+    "garra":    { "canal": 3, "offset": 0,  "sentido": 1, "minimo": 30, "maximo": 130 }
+  },
+
+  "estabilidade": {
+    "_leia_isto": "Quando a coordenada de um objeto pode ser usada. Ajuste com o objeto real parado na mesa: olhe a dispersao relatada e escolha uma tolerancia com folga sobre o tremor que aparecer, mas menor que a folga da garra.",
+    "janela": 5,
+    "tolerancia_mm": 3.0,
+    "timeout_s": 8.0,
+    "validade_amostra_s": 1.0
+  },
+
+  "coleta": {
+    "z_mesa": 0.0,
+    "z_pega": 15.0,
+    "z_aproximacao": 70.0,
+    "z_transporte": 80.0,
+    "deposito_xy": [-80.0, 100.0],
+    "pausa_s": 0.25,
+
+    "_garra": [
+      "Angulos de servo da garra, em GRAUS. null usa o minimo/maximo da junta.",
+      "Preencha os dois: qual extremo fecha depende de como a garra foi montada,",
+      "e assumir errado faz a garra ABRIR na hora de agarrar.",
+      "",
+      "garra_aberta  -> abertura suficiente para envolver a regiao de preensao",
+      "                 da peca, sem ir ate o limite mecanico a toa.",
+      "garra_fechada -> ponto em que a peca fica retida pelo ENCAIXE. Nao force",
+      "                 alem disso: com form closure a retencao e geometrica,",
+      "                 e apertar mais so aquece o servo."
+    ],
+    "garra_aberta_graus": null,
+    "garra_fechada_graus": null
+  }
+}

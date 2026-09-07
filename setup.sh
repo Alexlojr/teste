@@ -98,6 +98,26 @@ if ! python3 -c "import picamera2" 2>/dev/null; then
     echo "AVISO: picamera2 ainda não importável no venv. Confira se o apt install acima rodou sem erro."
 fi
 
+# ---------------------------------------------------------------------------
+# 5) Configuração do braço — avisa se ainda está com os valores de placeholder
+# ---------------------------------------------------------------------------
+mkdir -p config
+
+if [ ! -f "config/braco.json" ]; then
+    echo "AVISO: config/braco.json não existe. A coleta automática não vai funcionar."
+elif grep -q '"calibrado": false' config/braco.json 2>/dev/null; then
+    echo ""
+    echo "AVISO: config/braco.json ainda está com valores de PLACEHOLDER."
+    echo "       Meça os elos e ache os limites das juntas antes de mover o braço."
+    echo "       Confira o alcance com: python mapa_alcance.py"
+    echo ""
+fi
+
+if [ ! -f "config/homografia.json" ]; then
+    echo "AVISO: câmera não calibrada (config/homografia.json não existe)."
+    echo "       Rode 'python calibrar_camera.py' depois de fixar a câmera."
+fi
+
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 PORTA=8501
 

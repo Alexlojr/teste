@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Gerado pela calibração da câmera: vale só para a montagem física atual,
+# não faz sentido versionar.
+config/homografia.json
+
+.idea/
+.DS_Store

@@ -78,6 +78,9 @@ class MockArmSerial:
             try:
                 self._serial_real = serial.Serial(porta_arduino, baudrate, timeout=0.2)
                 time.sleep(2)  # Nano reinicia ao abrir a serial; espera o bootloader/sketch subir
+                # O firmware imprime "READY braco_firmware" ao subir. Se ficar
+                # na fila, e ele que a primeira pergunta le como resposta.
+                self._serial_real.reset_input_buffer()
             except Exception:
                 self._serial_real = None
 
@@ -97,24 +100,144 @@ class MockArmSerial:
 
     def write(self, data: bytes) -> int:
         linha = data.decode("utf-8", errors="ignore").strip()
-        if linha:
-            if self._serial_real is not None:
-                try:
-                    self._serial_real.write((linha + "\n").encode())
-                except Exception:
-                    pass
-            for resposta in self._processa_comando(linha):
+        if not linha:
+            return len(data)
+
+        # A simulação roda sempre: com Arduino real ela não é a verdade, mas
+        # serve de estado de exibição caso a porta caia no meio da operação.
+        respostas = self._processa_comando(linha)
+
+        if self._serial_real is not None:
+            try:
+                self._serial_real.write((linha + "\n").encode())
+            except Exception:
+                pass
+            # Não enfileira a resposta simulada: com hardware presente, quem
+            # responde é o firmware. Enfileirar as duas faria a fila crescer
+            # sem fim e mascararia a resposta real.
+        else:
+            for resposta in respostas:
+                self._registra("RX", resposta)
                 self._rx.append((resposta + "\n").encode())
+
         return len(data)
 
     @property
     def in_waiting(self) -> int:
+        if self._serial_real is not None:
+            try:
+                return self._serial_real.in_waiting
+            except Exception:
+                return 0
         return len(self._rx)
 
     def readline(self) -> bytes:
+        """
+        Uma linha de resposta.
+
+        Com Arduino conectado devolve a resposta DELE, não a da simulação.
+        Antes este método devolvia sempre a simulada mesmo com hardware
+        presente, então um `ERR ...` do firmware nunca chegava a aparecer em
+        lugar nenhum — o erro acontecia e ninguém ficava sabendo.
+        """
+        if self._serial_real is not None:
+            try:
+                bruto = self._serial_real.readline()
+            except Exception:
+                return b""
+            if bruto:
+                self._registra("RX", bruto.decode("utf-8", errors="ignore").strip())
+            return bruto
+
         if self._rx:
             return self._rx.popleft()
         return b""
+
+    # ---- diálogo com o firmware -----------------------------------------
+
+    def _pergunta(self, comando: str, prefixo: str, timeout_s: float = 1.0):
+        """
+        Manda um comando e espera a resposta que começa com `prefixo`.
+
+        Linhas que vierem antes (respostas atrasadas de SETs anteriores) são
+        registradas no histórico e descartadas — é assim que um `ERR` do
+        firmware fica visível no log em vez de ser engolido silenciosamente.
+        """
+        if self._serial_real is None:
+            return None
+        try:
+            self._serial_real.write((comando + "\n").encode())
+        except Exception:
+            return None
+        self._registra("TX", comando)
+
+        limite = time.monotonic() + timeout_s
+        while time.monotonic() < limite:
+            try:
+                linha = self._serial_real.readline().decode("utf-8", errors="ignore").strip()
+            except Exception:
+                return None
+            if not linha:
+                continue
+            self._registra("RX", linha)
+            if linha.upper().startswith(prefixo.upper()):
+                return linha
+        return None
+
+    def aguardar_parada(self, timeout_s: float = 15.0, intervalo_s: float = 0.05) -> bool:
+        """
+        Bloqueia até o braço parar de se mexer. True se parou, False no timeout.
+
+        Existe porque o firmware suaviza os movimentos, e a duração passou a
+        depender da distância: um SET de 100° leva quase o triplo de um de 30°.
+        Qualquer espera de tempo fixo erra nos dois sentidos — curta demais
+        manda a garra fechar antes de o braço ter descido, longa demais só
+        desperdiça ciclo.
+        """
+        limite = time.monotonic() + timeout_s
+
+        while time.monotonic() < limite:
+            if self._serial_real is not None:
+                resposta = self._pergunta("BUSY", "BUSY")
+                if resposta is None:
+                    return False              # firmware mudo: não fica preso
+                if resposta.split()[-1] == "0":
+                    return True
+            else:
+                with self._lock:
+                    parado = not any(e.em_movimento for e in self._servos.values())
+                if parado:
+                    return True
+            time.sleep(intervalo_s)
+
+        return False
+
+    def enviar_limites(self, calib) -> int:
+        """
+        Empurra os limites de junta do braco.json para o firmware, via LIM.
+
+        Sem isto os limites existem em dois lugares — o JSON e os arrays do
+        firmware — e dessincronizam em silêncio: alguém corrige o JSON depois
+        de recalibrar, esquece de recompilar o sketch, e o firmware continua
+        deixando a junta ir a um ângulo que já se sabe que bate.
+
+        Com esta chamada no início da operação, o JSON passa a ser a fonte
+        única e os valores gravados no sketch viram só um padrão de segurança
+        para quando ninguém empurrou nada.
+
+        Devolve quantas juntas foram aceitas pelo firmware.
+        """
+        if self._serial_real is None:
+            return 0
+
+        aceitas = 0
+        for servo in (calib.base, calib.ombro, calib.cotovelo, calib.garra):
+            resposta = self._pergunta(
+                f"LIM {servo.canal} {servo.minimo:.1f} {servo.maximo:.1f}", "OK LIM"
+            )
+            if resposta is not None:
+                aceitas += 1
+        return aceitas
 
     def read_all(self) -> bytes:
         linhas = list(self._rx)
@@ -189,8 +312,9 @@ class MockArmSerial:
         except (KeyError, ValueError, IndexError):
             respostas.append(f"ERR BAD_ARGS {linha}")
 
-        for resposta in respostas:
-            self._registra("RX", resposta)
+        # O RX e registrado por quem ENTREGA a resposta (write, quando nao ha
+        # Arduino, ou readline/_pergunta, quando ha). Registrar aqui faria a
+        # resposta simulada aparecer no log mesmo com hardware conectado.
         return respostas
 
     def _set_alvo(self, sid: int, angulo: float) -> float:
